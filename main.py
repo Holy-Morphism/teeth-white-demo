@@ -4,7 +4,7 @@ import os
 
 st.title("Teeh Whitening Demo")
 
-uploaded_file = st.file_uploader("Please upload an image of some teeth",type=["png","jpeg","jpg"])
+uploaded_file = st.file_uploader("Please upload an image of some teeth",type=["png"])
 
 
 
