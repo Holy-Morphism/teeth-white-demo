@@ -1,79 +1,35 @@
-# To run this code you need to install the following dependencies:
-# pip install google-genai
+import cv2
+import numpy as np
+import tempfile
+from PIL import Image
 
-import base64
-import mimetypes
-import os
-from google import genai
-from google.genai import types
-from dotenv import load_dotenv
+def whiten_teeth(img, mask, factor):
+    img_float = img.astype(np.float32) / 255.0
+    enhanced = img_float + mask * (factor - 1)
+    enhanced = np.clip(enhanced, 0, 1)
+    return (enhanced * 255).astype(np.uint8)
 
-load_dotenv()
+def generate_images(uploaded_file):
+    # Read uploaded file as OpenCV image
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
+    img = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
 
-client = genai.Client(
-        api_key=os.environ.get("GEMINI_API_KEY"),
-    )
+    # Dummy mask (you should replace this with real teeth detection)
+    mask = np.zeros_like(img_rgb[:, :, 0], dtype=np.float32)
+    h, w = mask.shape
+    # Example mask: central ellipse (simulate teeth region)
+    cv2.ellipse(mask, (w//2, h//2), (w//4, h//8), 0, 0, 360, 1, -1)
+    mask = np.expand_dims(mask, axis=-1)
 
-model = "gemini-2.0-flash-preview-image-generation"
+    # Whitening levels
+    factors = np.linspace(0.7, 1.5, 9)
 
+    output_paths = []
+    for i, factor in enumerate(factors):
+        whitened = whiten_teeth(img_rgb, mask, factor)
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png")
+        Image.fromarray(whitened).save(temp_file.name)
+        output_paths.append(temp_file.name)
 
-def save_binary_file(file_name, data):
-    f = open(file_name, "wb")
-    f.write(data)
-    f.close()
-    print(f"File saved to to: {file_name}")
-
-
-
-def generate_images(image_bytes):
-    contents = [
-        types.Content(
-            role="user",
-            parts=[
-                types.Part.from_bytes(
-                    mime_type="image/png",
-                    data=image_bytes  # Use the raw bytes directly
-                ),
-                types.Part.from_text(text="""This is an image of a person's teeth. Please generate the 4 examples of the same image but in each the teeth should be more brighter. Forexample the first image could have teeth 5/4 brightness, the second 6/4, the third 7/4 finally 8/4 for the last one which would double the brightness of the original."""),
-            ],
-        ),
-      
-    ]
-
-    generate_content_config = types.GenerateContentConfig(
-        response_modalities=[
-            "IMAGE",
-            "TEXT",
-        ],
-        response_mime_type="text/plain",
-    )
-
-    image_count = 0
-
-    image_file_paths = []
-
-    for chunk in client.models.generate_content_stream(
-        model=model,
-        contents=contents,
-        config=generate_content_config,
-    ):
-        if (
-            chunk.candidates is None
-            or chunk.candidates[0].content is None
-            or chunk.candidates[0].content.parts is None
-        ):
-            continue
-
-
-        if chunk.candidates[0].content.parts[0].inline_data:
-            file_name = "image" + str(image_count)
-            inline_data = chunk.candidates[0].content.parts[0].inline_data
-            data_buffer = inline_data.data
-            file_extension = mimetypes.guess_extension(inline_data.mime_type)
-            file_path = f"{file_name}{file_extension}"
-            image_file_paths.append(file_path)
-            save_binary_file(file_path, data_buffer)
-       
-        image_count = image_count + 1
-
-    return image_file_paths
+    return output_paths
